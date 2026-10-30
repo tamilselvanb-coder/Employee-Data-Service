@@ -1,31 +1,44 @@
+import json
 from pathlib import Path
-import openpyxl
+from typing import List
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-EXCEL_PATH = BASE_DIR / "salary.xlsx"
+app = FastAPI()
+DATA_FILE = Path(__file__).parent.parent / "employees.json"
 
+class EmployeeSchema(BaseModel):
+    name: str = Field(..., min_length=1)
+    department: str
+    salary: float = Field(..., gt=0)
 
-def read_excel_salaries():
-    """Reads salary data from salary.xlsx and prints employee records."""
-    if not EXCEL_PATH.exists():
-        print(f"File not found: {EXCEL_PATH}")
-        return
+def load_employees():
+    if not DATA_FILE.exists():
+        return []
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
-    wb = openpyxl.load_workbook(EXCEL_PATH)
-    sheet = wb.active
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
 
-    employees = []
-    headers = [cell.value for cell in sheet[1]]
+@app.get("/employees")
+def get_employees():
+    return load_employees()
 
-    for row in sheet.iter_rows(min_row=2, values_only=True):
-        if any(row):
-            record = dict(zip(headers, row))
-            employees.append(record)
-
-    print(f"Loaded {len(employees)} records from salary.xlsx:")
+@app.get("/employees/{name}")
+def get_employee_by_name(name: str):
+    employees = load_employees()
     for emp in employees:
-        print(emp)
+        if emp["name"].lower() == name.lower():
+            return emp
+    raise HTTPException(status_code=404, detail="Employee not found")
 
-
-if __name__ == "__main__":
-    read_excel_salaries()
+@app.post("/employees", status_code=201)
+def create_employee(emp: EmployeeSchema):
+    employees = load_employees()
+    new_emp = emp.model_dump()
+    employees.append(new_emp)
+    with open(DATA_FILE, "w") as f:
+        json.dump(employees, f, indent=2)
+    return new_emp

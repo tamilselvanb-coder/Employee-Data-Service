@@ -1,43 +1,51 @@
-from pathlib import Path
-
+import hmac
+import hashlib
+import os
 import requests
 from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Setup paths using pathlib
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+# Setup Session with Retry
+session = requests.Session()
+retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+session.mount("https://", HTTPAdapter(max_retries=retries))
 
+# Fetch Users
+response = session.get("https://jsonplaceholder.typicode.com/users")
+users = response.json()
 
-def fetch_and_save_data():
-    """Fetches sample JSON data from an external API and saves it locally."""
-    url = "https://jsonplaceholder.typicode.com/users"
+# 1. Print first 5 users
+for user in users[:5]:
+    print(user.get("id"))
+    print(user.get("name"))
+    print(user.get("email"))
 
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
+# 2. Extract nested values using .get() only
+first_user = users[0] if users else {}
+address = first_user.get("address") or {}
+city = address.get("city", "Not Available")
+zip_code = address.get("zipcode_missing", "Not Available")
 
-        data = response.json()
+print(f"City: {city} | Zip: {zip_code}")
 
-        # Output file path
-        output_file = DATA_DIR / "api_users.json"
+# 3. HMAC Verification
+def verify_signature(payload: str, signature: str, secret: str) -> bool:
+    expected_sig = hmac.new(
+        secret.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected_sig, signature)
 
-        # Save to JSON file
-        import json
+secret = "my_secret_key"
+payload = '{"event": "user_created"}'
+valid_sig = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+valid_test = verify_signature(payload, valid_sig, secret)
+tampered_test = verify_signature(payload + "tampered", valid_sig, secret)
+wrong_secret_test = verify_signature(payload, valid_sig, "wrong_secret")
 
-        print(
-            f"Successfully fetched {len(data)} user records and saved to '{output_file.name}'."
-        )
-
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to fetch data from API: {e}")
-
-
-if __name__ == "__main__":
-    fetch_and_save_data()
+print(f"Valid: {valid_test} Tampered: {tampered_test} Wrong secret: {wrong_secret_test}")
