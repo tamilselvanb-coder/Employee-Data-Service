@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.xlsx
+employees.json
+high_earners.csv
+venv/
+.venv/
